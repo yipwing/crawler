@@ -2,91 +2,104 @@ package main
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/parnurzeal/gorequest"
+	"time"
 )
 
 // const var
 const (
-	ReqURL       string = "https://mp.weixin.qq.com/s?__biz=MzA5ODMyODYzMQ==&mid=2650702544&idx=1&sn=19527bf20990e78686f8b9657dd52960&chksm=88996b88bfeee29eb4c5385f0c19c0291aa9d9c0ef49ab7f04d634cdef2a4e98acd4201d97b1&scene=38&key=d33469543f97729414a203c5808eea82a10294b23e6b4a5d60635646141ca55c0334a8f90930999d3a5be1330138e5884dc8d56aec8231b3f8ac6362143efcf05015eccfa01d656fb9e2c4e482a3450f&ascene=7&uin=MjY0MjQ3MDM0MA%3D%3D&devicetype=Windows+10&version=62060426&lang=zh_CN&pass_ticket=nVG1Vd7Q%2B5eDb9RAkmvA9Nx3WYqogZ7N3ixOwzhXOzpfoMDUPfjm5Zzz9cpAmeh0&winzoom=1"
+	ReqURL       string = "https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz=MzA5ODMyODYzMQ==&scene=124&uin=MjY0MjQ3MDM0MA%3D%3D&key=da65dc85b3e2c9b9bd0a758c5330cb66b68a380fb0a71aeb1cd4139ee73e237dd35e3e4443cc2da85bcee0de352b81ab9dbe85850b13469af8896ec04192c7d58b929aae1e1a400e69af5130a949c934&devicetype=Windows+10&version=62060426&lang=zh_CN&a8scene=7&pass_ticket=sPvpyYM58mb3GFrrwD6D1P88sW6bbrM1BhWCe5jLaYeCZdVbwgm66g8cPWifWBI8&winzoom=1"
 	UserAgent    string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 MicroMessenger/6.5.2.501 NetType/WIFI WindowsWechat QBCore/3.43.901.400 QQBrowser/9.0.2524.400"
 	ReadCountURL string = "https://mp.weixin.qq.com/mp/getappmsgext"
 )
 
-// RequestParameter struct
-type RequestParameter struct {
-	Biz        string `json:"__biz"`
-	MID        string `json:"mid"`
-	IDx        string `json:"idx"`
-	SN         string `json:"sn"`
-	KEY        string `json:"key"`
-	UIN        string `json:"uin"`
-	PassTicket string `json:"pass_ticket"`
-	ISOnlyRead int    `json:"is_only_read"`
-}
+// type RequestParameter struct {
+// 	Biz        string `json:"__biz"`
+// 	MID        string `json:"mid"`
+// 	IDx        string `json:"idx"`
+// 	SN         string `json:"sn"`
+// 	KEY        string `json:"key"`
+// 	UIN        string `json:"uin"`
+// 	PassTicket string `json:"pass_ticket"`
+// 	ISOnlyRead int    `json:"is_only_read"`
+// }
+const DATEFORMAT = "2006-01-02"
 
 func main() {
+	// fileObj, _ := ioutil.ReadFile("origin.json")
+	// rec := &ReceiveData{}
 
-	// reading := gorequest.New()
-
-	// URLParse, PraseErr := url.Parse(ReqURL)
-	// if PraseErr != nil {
-	// 	panic(PraseErr)
+	// level0Err := json.Unmarshal(fileObj, &rec)
+	// if level0Err != nil {
+	// 	panic(level0Err)
 	// }
-	// query := URLParse.Query()
-	// param := &RequestParameter{}
-	// param.Biz = query["__biz"][0]
-	// param.IDx = query["idx"][0]
-	// param.KEY = query["key"][0]
-	// param.MID = query["mid"][0]
-	// param.SN = query["sn"][0]
-	// param.PassTicket = query["pass_ticket"][0]
-	// param.UIN = query["uin"][0]
-	// fmt.Println(URLParse.RawQuery)
-	// return
-	// // resp, respErr := http.Get(ReqURL)
-	// // if respErr != nil {
-	// // 	panic(respErr)
-	// // }
-	// // readHandle := &http.Client{}
-	// // reading, readErr := http.NewRequest("POST", ReadCountURL, )
-	// // reading.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// urlParam := &url.Values{}
-	// urlParam.Add("__biz", query["__biz"][0])
-	// urlParam.Add("idx", query["idx"][0])
-	// urlParam.Add("key", query["key"][0])
-	// urlParam.Add("mid", query["mid"][0])
-	// urlParam.Add("sn", query["sn"][0])
-	// urlParam.Add("pass_ticket", query["pass_ticket"][0])
-	// urlParam.Add("uin", query["uin"][0])
-	// fmt.Print(urlParam)
-	// reading.Type("urlencoded")
-	// // reading.Post(ReadCountURL).Type("urlencoded")
-	// // reading.QueryData.Add("__biz", query["__biz"][0])
-	// // reading.QueryData.Add("idx", query["idx"][0])
-	// // reading.QueryData.Add("key", query["key"][0])
-	// // reading.QueryData.Add("mid", query["mid"][0])
-	// // reading.QueryData.Add("sn", query["sn"][0])
-	// // reading.QueryData.Add("pass_ticket", query["pass_ticket"][0])
-	// // reading.QueryData.Add("uin", query["uin"][0])
-	// // fmt.Print(reading.QueryData)
-	// return
+	// dstFile, err := os.Create("output.txt")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer dstFile.Close()
+	// dstFile.WriteString(rec.GeneralMsgList)
+	// rep := strings.Replace(rec.GeneralMsgList, "\\", "", -1)
+	// gml := &GeneralMsgList{}
 
-	resp, body, respErr := gorequest.New().Get(ReqURL).End()
-	if respErr != nil || resp.StatusCode != 200 {
-		panic(respErr)
-	}
-	doc, docErr := goquery.NewDocumentFromReader(strings.NewReader(body))
-	if docErr != nil {
-		panic(docErr)
-	}
-	PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text()
-	re, _ := regexp.Compile("\\s+|\n")
-	name := re.ReplaceAllString(PublicName, "")
-	fmt.Println(name)
-	ArticleString, _ := doc.Find(".rich_media_content").Html()
-	fmt.Println(ArticleString)
+	// level1Err := json.Unmarshal([]byte(rec.GeneralMsgList), &gml)
+	// if level1Err != nil {
+	// 	panic(level1Err)
+	// }
+
+	// for _, v := range gml.List {
+	// 	pubDate := time.Unix(v.CommMsgInfo.Datetime, 0).Format(timeLayout)
+	// 	at := (today - v.CommMsgInfo.Datetime) / BaseDaySec
+	// 	if at > 0 {
+	// 		contentURL, _ := url.Parse(v.AppMsgExtInfo.ContentURL)
+	// 		pn, article, title := ReadArticleAndTitle(v.AppMsgExtInfo.ContentURL)
+	// 		count := 0
+	// 		postURL := ReadCountURL
+	// for key, value := range contentURL.Query() {
+	// 	switch key {
+	// 	case "action":
+	// 		break
+	// 	case "lang":
+	// 		break
+	// 	case "winzoom":
+	// 		break
+	// 	case "a8scene":
+	// 		break
+	// 	case "version":
+	// 		break
+	// 	case "scene":
+	// 		break
+	// 	case "devicetype":
+	// 		break
+	// 	default:
+	// 		if count > 0 {
+	// 			postURL += "&" + key + "=" + value[0]
+	// 		} else {
+	// 			postURL += "?" + key + "=" + value[0]
+	// 			count++
+	// 		}
+	// 	}
+	// }
+	// 		reading := gorequest.New().Post(ReadCountURL).Set("User-Agent", UserAgent).Type("urlencoded").
+	// 			Send()
+	// 		ed = append(ed, ExcelData{pn, pubDate, 1, 1, 1, title, article})
+
+	// 		if v.AppMsgExtInfo.IsMulti == 1 {
+	// 			for _, mul := range v.AppMsgExtInfo.MultiAppMsgItemList {
+	// 				_, subarticle, subtitle := ReadArticleAndTitle(mul.ContentURL)
+	// 				strings.NewReader(subarticle)
+	// 				fmt.Println(subtitle)
+	// 			}
+	// 		}
+	// 		continue
+	// 	}
+	// }
+
+	year, month, _ := time.Now().Date()
+	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	start := thisMonth.AddDate(0, -1, 0)
+	end := thisMonth.AddDate(0, 0, -1)
+	MonthOfDay := (end.Unix()-start.Unix())/86400 + 1
+	fmt.Println(MonthOfDay)
+	fmt.Println(start)
+	fmt.Println(end)
 }

@@ -3,23 +3,20 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
-
 	"github.com/360EntSecGroup-Skylar/excelize"
+	"github.com/PuerkitoBio/goquery"
 
 	"github.com/parnurzeal/gorequest"
 )
 
 // var 变量定义
 var (
-	StartDay   string
-	MonthOfDay int
+	StartDay string
 )
 
 // const 常量定义
@@ -34,7 +31,6 @@ const (
 
 // PostData 提交给微信服务端的数据结构
 type PostData struct {
-	Action     string `json:"-"`
 	Biz        string `json:"__biz"`
 	Uin        string `json:"uin"`
 	Offset     int    `json:"offset"`
@@ -46,6 +42,24 @@ type PostData struct {
 	X5         int    `json:"x5"`
 	Devicetype string `json:"devicetype"`
 	// AppmsgToken string `json:appmsg_token`  // 这个值估计会有什么作用，暂时用不上，固注释掉
+}
+
+// ReadingGet 用于提交时的参数
+type ReadingGet struct {
+	UIN         string
+	KEY         string
+	PassTicket  string
+	AppMsgToken string
+}
+
+//	ReadingPost 提交给微信端的参数
+type ReadingPost struct {
+	Biz        string `json:"__biz"`
+	MID        string `json:"mid"`
+	IDx        string `json:"idx"`
+	SN         string `json:"sn"`
+	PassTicket string `json:"pass_ticket"`
+	ISOnlyRead int    `json:"is_only_read"`
 }
 
 // ReceiveData Json数据接收内部有个list的json
@@ -124,8 +138,14 @@ type ExcelData struct {
 	ArticleContent string
 }
 
+// ExcelTitle excel头文本
+type ExcelTitle []struct {
+	Axis string
+	Name string
+}
+
 // ReadArticleAndTitle 获取文章内容与文章标题，还有公众号名称
-func ReadArticleAndTitle(url string) (name string, article string) {
+func ReadArticleAndTitle(url string) (name string, article string, articletitle string) {
 	resp, body, respErr := gorequest.New().Get(url).End()
 	if respErr != nil || resp.StatusCode != 200 {
 		panic(respErr)
@@ -139,70 +159,52 @@ func ReadArticleAndTitle(url string) (name string, article string) {
 	re, _ := regexp.Compile("\\s+|\n")
 	pn := re.ReplaceAllString(PublicName, "")
 	ArticleString, _ := doc.Find(".rich_media_content").Html()
-	return pn, ArticleString
+	atitle := doc.Find(".rich_media_title").Text()
+	title := re.ReplaceAllString(atitle, "")
+	fmt.Print(title)
+	return pn, ArticleString, title
 }
+
+// 初始化全局变量
+var (
+	excelTitle = ExcelTitle{
+		{
+			"A1",
+			"公众号名称",
+		},
+		{
+			"B1",
+			"日期",
+		},
+		{
+			"C1",
+			"阅读数",
+		},
+		{
+			"D1",
+			"点赞数",
+		},
+		{
+			"E1",
+			"评论数",
+		},
+		{
+			"F1",
+			"文章标题",
+		},
+		{
+			"G1",
+			"文章内容",
+		},
+	}
+)
 
 // 微信服务端json数据结构结束
 
 func main() {
-	xlsx := excelize.NewFile()
-	return
-	// 实例代码 解决无法转换json的问题
-	fileObj, _ := ioutil.ReadFile("origin.json")
-	rec := &ReceiveData{}
-	level0Err := json.Unmarshal(fileObj, &rec)
-	if level0Err != nil {
-		panic(level0Err)
-	}
-	dstFile, err := os.Create("output.txt")
-	if err != nil {
-		panic(err)
-	}
-	defer dstFile.Close()
-	dstFile.WriteString(rec.GeneralMsgList)
-	// rep := strings.Replace(rec.GeneralMsgList, "\\", "", -1)
-	gml := &GeneralMsgList{}
-
-	level1Err := json.Unmarshal([]byte(rec.GeneralMsgList), &gml)
-	if level1Err != nil {
-		panic(level1Err)
-	}
-	// loc, _ := time.LoadLocation("Asia/Chongqing")
-	today := time.Now().Unix()
-	// URLArray := list.New()
-	for _, v := range gml.List {
-		// tm := time.Unix(v.CommMsgInfo.Datetime, 0)
-		at := (today - v.CommMsgInfo.Datetime) / BaseDaySec
-		if at > 0 {
-			// contentURL, _ := url.Parse(v.AppMsgExtInfo.ContentURL)
-			// fmt.Println(contentURL.RawQuery)
-			// 这一段是获取文章内容，公众号名称等等
-			pn, article := ReadArticleAndTitle(v.AppMsgExtInfo.ContentURL)
-			xlsx.NewSheet(pn)
-			for i := 0; i <= 7; i++ {
-
-			}
-			rows, rowErr := xlsx.Rows(pn)
-			if rowErr != nil {
-				panic(rowErr)
-			}
-			for rows.Next() {
-				for _, colCell := range rows.Columns() {
-					fmt.Println(colCell)
-				}
-			}
-			fmt.Print(article)
-			// xlsx.SetCellValue()
-			if v.AppMsgExtInfo.IsMulti == 1 {
-				for _, mul := range v.AppMsgExtInfo.MultiAppMsgItemList {
-					fmt.Println(mul.ContentURL)
-				}
-			}
-			continue
-		}
-	}
-	return
-	// 获取微信主要数据以访问
+	// todo 获取微信主要数据以访问
+	fmt.Println("注意，由于程序会获取当前系统时区作为判断。请确认你的时区是正确的")
+	var pubname string
 	p := &PostData{}
 	fmt.Print("输入__biz参数值：")
 	fmt.Scanln(&p.Biz)
@@ -212,39 +214,48 @@ func main() {
 	fmt.Scanln(&p.Key)
 	fmt.Print("输入pass_ticket参数值(先执行下decode)：")
 	fmt.Scanln(&p.PassTicket)
+	fmt.Print("输入要抓取的公众号名称：")
+	fmt.Scanln(&pubname)
 	p.IsOk = 1
 	p.Offset = 0
 	p.Count = 10
 	p.X5 = 0
 	p.Format = "json"
-	p.Action = "getmsg"
-
-	// 计算循环次数
+	Action := "getmsg"
+	// 计算循环次数 todo
 	CurrentTime := time.Now()
-	fmt.Print("请输入开始时间(例如 2018-8-1)：")
-	fmt.Scanln(&StartDay)
-	fmt.Print("请输入本月总天数(例如 31)：")
-	fmt.Scanln(&MonthOfDay)
-	if (CurrentTime.Day() - MonthOfDay) <= 0 {
-		MonthOfDay = CurrentTime.Day()
+	year, month, _ := time.Now().Date()
+	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	startDay := thisMonth.AddDate(0, -1, 0)
+	endDay := thisMonth.AddDate(0, 0, -1)
+	MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
+
+	// 初始化excel表头标题
+	xlsx := excelize.NewFile()
+	timeLayout := "2006-01-02"
+	today := time.Now().Unix()
+	for _, v := range excelTitle {
+		xlsx.SetCellValue(pubname, v.Axis, v.Name)
 	}
-	fmt.Print(MonthOfDay)
-	for index := 0; index < MonthOfDay; index++ {
+	ed := []ExcelData{}
+	for index := 0; index <= int(MonthOfDay); index++ {
 		request := gorequest.New()
-		request.QueryData.Add("action", p.Action)
-		request.QueryData.Add("__biz", p.Biz)
-		request.QueryData.Add("uin", p.Uin)
-		request.QueryData.Add("key", p.Key)
-		request.QueryData.Add("pass_ticket", p.PassTicket)
-		request.QueryData.Add("is_ok", string(p.IsOk))
-		request.QueryData.Add("f", p.Format)
-		request.QueryData.Add("x5", string(p.X5))
-		request.QueryData.Add("offset", string(p.Offset))
-		request.QueryData.Add("count", string(p.Count))
-		req, body, reqErr := request.Get(BaseURL).End()
+		param := &url.Values{}
+		param.Add("action", Action)
+		param.Add("__biz", p.Biz)
+		param.Add("uin", p.Uin)
+		param.Add("key", p.Key)
+		param.Add("pass_ticket", p.PassTicket)
+		param.Add("is_ok", string(p.IsOk))
+		param.Add("f", p.Format)
+		param.Add("x5", string(p.X5))
+		param.Add("offset", string(p.Offset))
+		param.Add("count", string(p.Count))
+		req, body, reqErr := request.Get(BaseURL).Query(param).Set("User-Agent", UserAgent).End()
 		if reqErr != nil {
 			panic(reqErr)
 		}
+		defer req.Body.Close()
 		if req.StatusCode != 200 {
 			panic("status code error")
 		}
@@ -259,6 +270,12 @@ func main() {
 		level1Err := json.Unmarshal([]byte(receive.GeneralMsgList), &gml)
 		if level1Err != nil {
 			panic(level1Err)
+		}
+		for _, First := range gml.List {
+			pubDate := time.Unix(First.CommMsgInfo.Datetime, 0).Format(timeLayout)
+
+			at := (today - First.CommMsgInfo.Datetime) / BaseDaySec
+
 		}
 
 		// url.QueryUnescape() // urldecode
