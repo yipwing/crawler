@@ -2,7 +2,11 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"regexp"
+	"strings"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/parnurzeal/gorequest"
 )
 
 // const var
@@ -12,17 +16,89 @@ const (
 	ReadCountURL string = "https://mp.weixin.qq.com/mp/getappmsgext"
 )
 
-// type RequestParameter struct {
-// 	Biz        string `json:"__biz"`
-// 	MID        string `json:"mid"`
-// 	IDx        string `json:"idx"`
-// 	SN         string `json:"sn"`
-// 	KEY        string `json:"key"`
-// 	UIN        string `json:"uin"`
-// 	PassTicket string `json:"pass_ticket"`
-// 	ISOnlyRead int    `json:"is_only_read"`
-// }
-const DATEFORMAT = "2006-01-02"
+type ReceiveData struct {
+	Ret            int    `json:"ret"`
+	Errmsg         string `json:"errmsg"`
+	MsgCount       int    `json:"msg_count"`
+	CanMsgContinue int    `json:"can_msg_continue"`
+	GeneralMsgList string `json:"general_msg_list"`
+	NextOffset     int    `json:"next_offset"`
+	VideoCount     int    `json:"video_count"`
+	UseVideoTab    int    `json:"use_video_tab"`
+	RealType       int    `json:"real_type"`
+}
+type GeneralMsgList struct {
+	List []struct {
+		AppMsgExtInfo struct {
+			AudioFileid            int    `json:"audio_fileid"`
+			Author                 string `json:"author"`
+			Content                string `json:"content"`
+			ContentURL             string `json:"content_url"`
+			CopyrightStat          int    `json:"copyright_stat"`
+			Cover                  string `json:"cover"`
+			DelFlag                int    `json:"del_flag"`
+			Digest                 string `json:"digest"`
+			Duration               int    `json:"duration"`
+			Fileid                 int    `json:"fileid"`
+			IsMulti                int    `json:"is_multi"`
+			ItemShowType           int    `json:"item_show_type"`
+			MaliciousContentType   int    `json:"malicious_content_type"`
+			MaliciousTitleReasonID int    `json:"malicious_title_reason_id"`
+			MultiAppMsgItemList    []struct {
+				AudioFileid            int    `json:"audio_fileid"`
+				Author                 string `json:"author"`
+				Content                string `json:"content"`
+				ContentURL             string `json:"content_url"`
+				CopyrightStat          int    `json:"copyright_stat"`
+				Cover                  string `json:"cover"`
+				DelFlag                int    `json:"del_flag"`
+				Digest                 string `json:"digest"`
+				Duration               int    `json:"duration"`
+				Fileid                 int    `json:"fileid"`
+				ItemShowType           int    `json:"item_show_type"`
+				MaliciousContentType   int    `json:"malicious_content_type"`
+				MaliciousTitleReasonID int    `json:"malicious_title_reason_id"`
+				PlayURL                string `json:"play_url"`
+				SourceURL              string `json:"source_url"`
+				Title                  string `json:"title"`
+			} `json:"multi_app_msg_item_list"`
+			PlayURL   string `json:"play_url"`
+			SourceURL string `json:"source_url"`
+			Subtype   int    `json:"subtype"`
+			Title     string `json:"title"`
+		} `json:"app_msg_ext_info"`
+		CommMsgInfo struct {
+			Content  string `json:"content"`
+			Datetime int64  `json:"datetime"`
+			Fakeid   string `json:"fakeid"`
+			ID       int64  `json:"id"`
+			Status   int    `json:"status"`
+			Type     int    `json:"type"`
+		} `json:"comm_msg_info"`
+	} `json:"list"`
+}
+
+func ReadArticleAndTitle(url string) (name string, article string, articletitle string) {
+	resp, body, respErr := gorequest.New().Get(url).End()
+	if respErr != nil || resp.StatusCode != 200 {
+		panic(respErr)
+	}
+	defer resp.Body.Close()
+	doc, reqErr := goquery.NewDocumentFromReader(strings.NewReader(body))
+	if reqErr != nil {
+		panic(reqErr)
+	}
+	PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text() // 公众号名称
+	re, _ := regexp.Compile("\\s+|\n")
+	pn := re.ReplaceAllString(PublicName, "")
+	ArticleString, _ := doc.Find(".rich_media_content").Html()
+	atitle := doc.Find(".rich_media_title").Text()
+	title := re.ReplaceAllString(atitle, "")
+	fmt.Print(title)
+	return pn, ArticleString, title
+}
+
+// const DATEFORMAT = "2006-01-02"
 
 func main() {
 	// fileObj, _ := ioutil.ReadFile("origin.json")
@@ -38,46 +114,40 @@ func main() {
 	// }
 	// defer dstFile.Close()
 	// dstFile.WriteString(rec.GeneralMsgList)
-	// rep := strings.Replace(rec.GeneralMsgList, "\\", "", -1)
 	// gml := &GeneralMsgList{}
 
 	// level1Err := json.Unmarshal([]byte(rec.GeneralMsgList), &gml)
 	// if level1Err != nil {
 	// 	panic(level1Err)
 	// }
-
-	// for _, v := range gml.List {
-	// 	pubDate := time.Unix(v.CommMsgInfo.Datetime, 0).Format(timeLayout)
-	// 	at := (today - v.CommMsgInfo.Datetime) / BaseDaySec
-	// 	if at > 0 {
-	// 		contentURL, _ := url.Parse(v.AppMsgExtInfo.ContentURL)
-	// 		pn, article, title := ReadArticleAndTitle(v.AppMsgExtInfo.ContentURL)
-	// 		count := 0
-	// 		postURL := ReadCountURL
-	// for key, value := range contentURL.Query() {
-	// 	switch key {
-	// 	case "action":
-	// 		break
-	// 	case "lang":
-	// 		break
-	// 	case "winzoom":
-	// 		break
-	// 	case "a8scene":
-	// 		break
-	// 	case "version":
-	// 		break
-	// 	case "scene":
-	// 		break
-	// 	case "devicetype":
-	// 		break
-	// 	default:
-	// 		if count > 0 {
-	// 			postURL += "&" + key + "=" + value[0]
-	// 		} else {
-	// 			postURL += "?" + key + "=" + value[0]
-	// 			count++
+	// for _, First := range gml.List {
+	// 	contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
+	// 	contentQuery := &url.Values{}
+	// 	for key, value := range contentURL.Query() {
+	// 		switch key {
+	// 		case "action":
+	// 			break
+	// 		case "lang":
+	// 			break
+	// 		case "winzoom":
+	// 			break
+	// 		case "a8scene":
+	// 			break
+	// 		case "version":
+	// 			break
+	// 		case "scene":
+	// 			break
+	// 		case "devicetype":
+	// 			break
+	// 		case "chksm":
+	// 			break
+	// 		case "amp":
+	// 			break
+	// 		default:
+	// 			contentQuery.Add(key, value[0])
 	// 		}
 	// 	}
+	// 	fmt.Println(contentQuery)
 	// }
 	// 		reading := gorequest.New().Post(ReadCountURL).Set("User-Agent", UserAgent).Type("urlencoded").
 	// 			Send()
@@ -93,13 +163,11 @@ func main() {
 	// 		continue
 	// 	}
 	// }
-
-	year, month, _ := time.Now().Date()
-	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
-	start := thisMonth.AddDate(0, -1, 0)
-	end := thisMonth.AddDate(0, 0, -1)
-	MonthOfDay := (end.Unix()-start.Unix())/86400 + 1
-	fmt.Println(MonthOfDay)
-	fmt.Println(start)
-	fmt.Println(end)
+	// f, _ := time.ParseInLocation("2006年01月02日", "2018年08月29日", time.Local)
+	Offset := 0
+	index := 0
+	for index <= Offset {
+		fmt.Println("inside")
+		index++
+	}
 }

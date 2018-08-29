@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +17,37 @@ import (
 
 // var 变量定义
 var (
-	StartDay string
+	StartDay   string
+	excelTitle = ExcelTitle{
+		{
+			"A1",
+			"公众号名称",
+		},
+		{
+			"B1",
+			"日期",
+		},
+		{
+			"C1",
+			"阅读数",
+		},
+		{
+			"D1",
+			"点赞数",
+		},
+		{
+			"E1",
+			"评论数",
+		},
+		{
+			"F1",
+			"文章标题",
+		},
+		{
+			"G1",
+			"文章内容",
+		},
+	}
 )
 
 // const 常量定义
@@ -44,24 +75,6 @@ type PostData struct {
 	// AppmsgToken string `json:appmsg_token`  // 这个值估计会有什么作用，暂时用不上，固注释掉
 }
 
-// ReadingGet 用于提交时的参数
-type ReadingGet struct {
-	UIN         string
-	KEY         string
-	PassTicket  string
-	AppMsgToken string
-}
-
-//	ReadingPost 提交给微信端的参数
-type ReadingPost struct {
-	Biz        string `json:"__biz"`
-	MID        string `json:"mid"`
-	IDx        string `json:"idx"`
-	SN         string `json:"sn"`
-	PassTicket string `json:"pass_ticket"`
-	ISOnlyRead int    `json:"is_only_read"`
-}
-
 // ReceiveData Json数据接收内部有个list的json
 type ReceiveData struct {
 	Ret            int    `json:"ret"`
@@ -73,6 +86,32 @@ type ReceiveData struct {
 	VideoCount     int    `json:"video_count"`
 	UseVideoTab    int    `json:"use_video_tab"`
 	RealType       int    `json:"real_type"`
+}
+
+// MsgStatus 文章内容评论数、点赞数与阅读数
+type MsgStatus struct {
+	AdvertisementInfo []interface{} `json:"advertisement_info"`
+	AdvertisementNum  int           `json:"advertisement_num"`
+	Appmsgstat        struct {
+		IsLogin     bool `json:"is_login"`
+		LikeNum     int  `json:"like_num"`
+		Liked       bool `json:"liked"`
+		ReadNum     int  `json:"read_num"`
+		RealReadNum int  `json:"real_read_num"`
+		Ret         int  `json:"ret"`
+		Show        bool `json:"show"`
+	} `json:"appmsgstat"`
+	BaseResp struct {
+		Wxtoken int `json:"wxtoken"`
+	} `json:"base_resp"`
+	CommentCount         int           `json:"comment_count"`
+	CommentEnabled       int           `json:"comment_enabled"`
+	FriendCommentEnabled int           `json:"friend_comment_enabled"`
+	IsFans               int           `json:"is_fans"`
+	LogoURL              string        `json:"logo_url"`
+	NickName             string        `json:"nick_name"`
+	OnlyFansCanComment   bool          `json:"only_fans_can_comment"`
+	RewardHeadImgs       []interface{} `json:"reward_head_imgs"`
 }
 
 // GeneralMsgList list数据
@@ -165,45 +204,12 @@ func ReadArticleAndTitle(url string) (name string, article string, articletitle 
 	return pn, ArticleString, title
 }
 
-// 初始化全局变量
-var (
-	excelTitle = ExcelTitle{
-		{
-			"A1",
-			"公众号名称",
-		},
-		{
-			"B1",
-			"日期",
-		},
-		{
-			"C1",
-			"阅读数",
-		},
-		{
-			"D1",
-			"点赞数",
-		},
-		{
-			"E1",
-			"评论数",
-		},
-		{
-			"F1",
-			"文章标题",
-		},
-		{
-			"G1",
-			"文章内容",
-		},
-	}
-)
-
 // 微信服务端json数据结构结束
 
 func main() {
 	// todo 获取微信主要数据以访问
-	fmt.Println("注意，由于程序会获取当前系统时区作为判断。请确认你的时区是正确的")
+	fmt.Println("注意：由于程序会获取当前系统时区作为判断。请确认你的时区是正确的")
+	fmt.Println("再次注意：程序会直接获取上个月的微信公众号内容作为任务目标")
 	var pubname string
 	p := &PostData{}
 	fmt.Print("输入__biz参数值：")
@@ -223,22 +229,23 @@ func main() {
 	p.Format = "json"
 	Action := "getmsg"
 	// 计算循环次数 todo
-	CurrentTime := time.Now()
+	// CurrentTime := time.Now()
 	year, month, _ := time.Now().Date()
 	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
 	startDay := thisMonth.AddDate(0, -1, 0)
 	endDay := thisMonth.AddDate(0, 0, -1)
-	MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
+	// MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
 
 	// 初始化excel表头标题
 	xlsx := excelize.NewFile()
 	timeLayout := "2006-01-02"
-	today := time.Now().Unix()
+	currentTime := time.Now().Format(timeLayout)
 	for _, v := range excelTitle {
 		xlsx.SetCellValue(pubname, v.Axis, v.Name)
 	}
 	ed := []ExcelData{}
-	for index := 0; index <= int(MonthOfDay); index++ {
+	index := 0
+	for index <= p.Offset {
 		request := gorequest.New()
 		param := &url.Values{}
 		param.Add("action", Action)
@@ -259,62 +266,168 @@ func main() {
 		if req.StatusCode != 200 {
 			panic("status code error")
 		}
-		// startday := time.Now().Format(StartDay)
 		receive := &ReceiveData{}
 		orgErr := json.Unmarshal([]byte(body), &receive)
 		if orgErr != nil {
 			panic(orgErr)
 		}
-		p.Offset = receive.NextOffset
 		gml := &GeneralMsgList{}
 		level1Err := json.Unmarshal([]byte(receive.GeneralMsgList), &gml)
 		if level1Err != nil {
 			panic(level1Err)
 		}
+		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[index].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
+		// todo 这里需要判断时间 并不清楚具体情况
+		if endDay.Unix()-articleTime.Unix() >= BaseDaySec && index <= 0 {
+			index++
+		} else {
+			p.Offset = receive.NextOffset
+		}
+		fmt.Printf("loop: %d times", index+1)
 		for _, First := range gml.List {
 			pubDate := time.Unix(First.CommMsgInfo.Datetime, 0).Format(timeLayout)
-
-			at := (today - First.CommMsgInfo.Datetime) / BaseDaySec
-
+			contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
+			pn, article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
+			postForm := &url.Values{}
+			getForm := &url.Values{}
+			for key, value := range contentURL.Query() {
+				switch key {
+				case "action":
+					break
+				case "lang":
+					break
+				case "winzoom":
+					break
+				case "a8scene":
+					break
+				case "version":
+					break
+				case "scene":
+					break
+				case "devicetype":
+					break
+				case "chksm":
+					break
+				case "amp":
+					break
+				default:
+					postForm.Add(key, value[0])
+				}
+			}
+			postForm.Add("pass_ticket", p.PassTicket)
+			postForm.Add("is_only_read", "1")
+			postForm.Add("msg_daily_idx", "1")
+			getForm.Add("wxtoken", "777")
+			getForm.Add("f", "json")
+			getForm.Add("uin", p.Uin)
+			getForm.Add("key", p.Key)
+			getForm.Add("pass_ticket", p.PassTicket)
+			reading, body, readErr := gorequest.New().
+				Post(ReadCountURL).
+				Query(getForm).
+				Set("User-Agent", UserAgent).
+				Type("urlencoded").
+				Send(postForm).
+				End()
+			if readErr != nil {
+				panic("发送数据时发生异常")
+				fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
+			}
+			defer reading.Body.Close()
+			if reading.StatusCode != 200 {
+				panic("http状态码返回错误")
+			}
+			fmt.Println(body)
+			at := (endDay.Unix() - First.CommMsgInfo.Datetime) / BaseDaySec
+			if at <= 0 {
+				fmt.Println("警告：获取到的文章年月和上月日期不符")
+				panic("无法继续执行任务")
+			} else {
+				msgStat := &MsgStatus{}
+				msgErr := json.Unmarshal([]byte(body), msgStat)
+				if msgErr != nil {
+					panic("无法获取文章扩展数据")
+				}
+				ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+			}
+			if First.AppMsgExtInfo.IsMulti == 1 {
+				for _, Sec := range First.AppMsgExtInfo.MultiAppMsgItemList {
+					pubDate := time.Unix(Sec.Datetime, 0).Format(timeLayout)
+					contentURL, _ := url.Parse(Sec.ContentURL)
+					pn, article, title := ReadArticleAndTitle(Sec.ContentURL)
+					postForm := &url.Values{}
+					getForm := &url.Values{}
+					for key, value := range contentURL.Query() {
+						switch key {
+						case "action":
+							break
+						case "lang":
+							break
+						case "winzoom":
+							break
+						case "a8scene":
+							break
+						case "version":
+							break
+						case "scene":
+							break
+						case "devicetype":
+							break
+						case "chksm":
+							break
+						case "amp":
+							break
+						default:
+							postForm.Add(key, value[0])
+						}
+					}
+					postForm.Add("pass_ticket", p.PassTicket)
+					postForm.Add("is_only_read", "1")
+					postForm.Add("msg_daily_idx", "1")
+					getForm.Add("wxtoken", "777")
+					getForm.Add("f", "json")
+					getForm.Add("uin", p.Uin)
+					getForm.Add("key", p.Key)
+					getForm.Add("pass_ticket", p.PassTicket)
+					reading, body, readErr := gorequest.New().
+						Post(ReadCountURL).
+						Query(getForm).
+						Set("User-Agent", UserAgent).
+						Type("urlencoded").
+						Send(postForm).
+						End()
+					if readErr != nil {
+						panic("发送数据时发生异常")
+						fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
+					}
+					defer reading.Body.Close()
+					if reading.StatusCode != 200 {
+						panic("http状态码返回错误")
+					}
+					fmt.Println(body)
+					at := (endDay.Unix() - First.CommMsgInfo.Datetime) / BaseDaySec
+					if at <= 0 {
+						fmt.Println("警告：获取到的文章年月和上月日期不符")
+						panic("无法继续执行任务")
+					} else {
+						msgStat := &MsgStatus{}
+						msgErr := json.Unmarshal([]byte(body), msgStat)
+						if msgErr != nil {
+							panic("无法获取文章扩展数据")
+						}
+						ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					}
+				}
+			}
 		}
-
-		// url.QueryUnescape() // urldecode
-		// todo 这里需要循环内部的list，list中还有list需要循环。
-		// for i := 0; i < receive.GeneralMsgList.Array.Len(); i++ {
-		// 	cmi = &CommMsgInfo{}
-		// 	amei = &AppMsgExtInfo{}
-		// 	mamil = &MultiAppMsgItemList{}
-		// 	cmi = receive.GeneralMsgList.Array[i].comm_msg_info
-		// 	// for j :=0; j <
-		// }
+		excelLoop := 2
+		for i := 0; i < len(ed); i++ {
+			excelLoop += i
+			axis := excelize.ToAlphaString(i) + strconv.Itoa(excelLoop)
+			for _, excel := range ed {
+				xlsx.SetCellValue(pubname, axis, excel.PublicName)
+			}
+		}
 	}
-
-	// 微信端拉取数据这里要注意下一页方法是action=getmsg
-	/*
-		mp.weixin.qq.com/mp/profile_ext?action=getmsg&__biz=MzA5ODMyODYzMQ==&f=json&offset=10&count=10&is_ok=1&scene=124&uin=MjY0MjQ3MDM0MA==&key=d33469543f977294b762012380263097f662eeb79fec9b6e0fac1cf2420b209fb6a67247cb90c62fa759d5357b4e59bc53875bef9ebe2a8ee82dec17aad20b478bea67c6aac317a5d1c3ecbf3e48fb21&pass_ticket=yk%2FXz65ktUUZp%2BkksTLzJz2BXrGWndRSGzc6ViN%2BFBEWvS3XTsuJgL5s02BPDOb3&wxtoken=&appmsg_token=970_aAXg8wPyGe%252F46ggtzaMsyEdlI6gix6nHpfu-_w~~&x5=0&f=json
-
-		mp.weixin.qq.com/mp/profile_ext?action=home&__biz=MzA3MTA1MDU3OA==&uin=MjY0MjQ3MDM0MA%3D%3D&key=b8264eebf6d6109a6b2b704a25a42fae44cf1117e611cf34d0db580e1428d56252c019368099da01a43d13069c41806f85ced315163a5483cdf9fc5bfc88cd2b08c711598d9dde1ffbfeed8e367b060a&devicetype=Windows+10&version=62060426&lang=zh_CN&a8scene=7&pass_ticket=yk%2FXz65ktUUZp%2BkksTLzJz2BXrGWndRSGzc6ViN%2BFBEWvS3XTsuJgL5s02BPDOb3&winzoom=1
-	*/
-	// 微信错误返回
-	/*
-		{
-			"base_resp": {
-					"ret": -3,
-					"errmsg": "no session",
-					"cookie_count": 0,
-					"csp_nonce": 1916841621
-			},
-				"ret": -3,
-				"errmsg": "no session",
-				"cookie_count": 0
-		}
-	*/
-	// doc.Find("div.list a.item").Each(func(i int, s *goquery.Selection) {
-	// https://movie.douban.com/explore#!type=movie&sort=recommend&page_limit=20&page_start=0
-	// 豆瓣这个地方的属于js请求范畴，故用此方法获取不到内容。 下面是js请求内容
-	// https://movie.douban.com/j/search_subjects?type=movie&tag=%E7%83%AD%E9%97%A8&sort=recommend&page_limit=20&page_start=0
-	// 	href, _ := s.Attr("href")
-	// 	name := s.Find("p").Text()
-	// 	fmt.Printf("number of %d\nname: %s\nhref: %s", i, name, href)
-	// })
+	xlsx.SaveAs(currentTime + ".xlsx")
 }
