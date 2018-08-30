@@ -164,10 +164,4 @@ func main() {
 	// 	}
 	// }
 	// f, _ := time.ParseInLocation("2006年01月02日", "2018年08月29日", time.Local)
-	Offset := 0
-	index := 0
-	for index <= Offset {
-		fmt.Println("inside")
-		index++
-	}
 }

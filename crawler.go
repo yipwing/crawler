@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/op/go-logging"
 
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
@@ -204,12 +207,24 @@ func ReadArticleAndTitle(url string) (name string, article string, articletitle 
 	return pn, ArticleString, title
 }
 
+var log = logging.MustGetLogger("crawler")
+
+// var format = logging.MustStringFormatter(
+// 	`%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
+// )
+
 // 微信服务端json数据结构结束
 
 func main() {
 	// todo 获取微信主要数据以访问
+	logFile, fErr := os.OpenFile("logger.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if fErr != nil {
+		fmt.Println("无法打开或创建文件\"logging.log\"")
+		panic(fErr)
+	}
+	defer logFile.Close()
 	fmt.Println("注意：由于程序会获取当前系统时区作为判断。请确认你的时区是正确的")
-	fmt.Println("再次注意：程序会直接获取上个月的微信公众号内容作为任务目标")
+	fmt.Println("注意：程序会直接获取上个月的微信公众号内容作为任务目标，为期一个月")
 	var pubname string
 	p := &PostData{}
 	fmt.Print("输入__biz参数值：")
@@ -260,6 +275,9 @@ func main() {
 		param.Add("count", string(p.Count))
 		req, body, reqErr := request.Get(BaseURL).Query(param).Set("User-Agent", UserAgent).End()
 		if reqErr != nil {
+			buffer := []byte(strings.Join([]string{"Get Request", body, "\n"}, ""))
+			log.Debugf("Get Request : %s", body)
+			logFile.Write(buffer)
 			panic(reqErr)
 		}
 		defer req.Body.Close()
@@ -269,17 +287,26 @@ func main() {
 		receive := &ReceiveData{}
 		orgErr := json.Unmarshal([]byte(body), &receive)
 		if orgErr != nil {
+			buffer := []byte(strings.Join([]string{"json transform error", orgErr.Error(), "\n"}, ""))
+			log.Debugf("json transform error : %s", orgErr.Error())
+			logFile.Write(buffer)
 			panic(orgErr)
 		}
 		gml := &GeneralMsgList{}
 		level1Err := json.Unmarshal([]byte(receive.GeneralMsgList), &gml)
 		if level1Err != nil {
+			buffer := []byte(strings.Join([]string{"json sub list transform error", orgErr.Error(), "\n"}, ""))
+			log.Debugf("json sub list transform error : %s", orgErr.Error())
+			logFile.Write(buffer)
 			panic(level1Err)
 		}
 		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[index].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
 		// todo 这里需要判断时间 并不清楚具体情况
-		if endDay.Unix()-articleTime.Unix() >= BaseDaySec && index <= 0 {
-			index++
+		if endDay.Unix()-articleTime.Unix() > BaseDaySec && index == 0 {
+			panic("文章时间与本地获取时间不符。")
+		}
+		if startDay.Unix()-articleTime.Unix() < BaseDaySec && index > 0 {
+			break
 		} else {
 			p.Offset = receive.NextOffset
 		}
@@ -330,29 +357,22 @@ func main() {
 				Send(postForm).
 				End()
 			if readErr != nil {
-				panic("发送数据时发生异常")
 				fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
+				panic("发送数据时发生异常")
 			}
 			defer reading.Body.Close()
 			if reading.StatusCode != 200 {
 				panic("http状态码返回错误")
 			}
 			fmt.Println(body)
-			at := (endDay.Unix() - First.CommMsgInfo.Datetime) / BaseDaySec
-			if at <= 0 {
-				fmt.Println("警告：获取到的文章年月和上月日期不符")
-				panic("无法继续执行任务")
-			} else {
-				msgStat := &MsgStatus{}
-				msgErr := json.Unmarshal([]byte(body), msgStat)
-				if msgErr != nil {
-					panic("无法获取文章扩展数据")
-				}
-				ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+			msgStat := &MsgStatus{}
+			msgErr := json.Unmarshal([]byte(body), msgStat)
+			if msgErr != nil {
+				panic("无法获取文章扩展数据")
 			}
+			ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
 			if First.AppMsgExtInfo.IsMulti == 1 {
 				for _, Sec := range First.AppMsgExtInfo.MultiAppMsgItemList {
-					pubDate := time.Unix(Sec.Datetime, 0).Format(timeLayout)
 					contentURL, _ := url.Parse(Sec.ContentURL)
 					pn, article, title := ReadArticleAndTitle(Sec.ContentURL)
 					postForm := &url.Values{}
@@ -397,26 +417,20 @@ func main() {
 						Send(postForm).
 						End()
 					if readErr != nil {
-						panic("发送数据时发生异常")
 						fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
+						panic("发送数据时发生异常")
 					}
 					defer reading.Body.Close()
 					if reading.StatusCode != 200 {
 						panic("http状态码返回错误")
 					}
 					fmt.Println(body)
-					at := (endDay.Unix() - First.CommMsgInfo.Datetime) / BaseDaySec
-					if at <= 0 {
-						fmt.Println("警告：获取到的文章年月和上月日期不符")
-						panic("无法继续执行任务")
-					} else {
-						msgStat := &MsgStatus{}
-						msgErr := json.Unmarshal([]byte(body), msgStat)
-						if msgErr != nil {
-							panic("无法获取文章扩展数据")
-						}
-						ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					subMsgStat := &MsgStatus{}
+					msgErr := json.Unmarshal([]byte(body), subMsgStat)
+					if msgErr != nil {
+						panic("无法获取文章扩展数据")
 					}
+					ed = append(ed, ExcelData{pn, pubDate, subMsgStat.Appmsgstat.ReadNum, subMsgStat.Appmsgstat.LikeNum, subMsgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
 				}
 			}
 		}
@@ -429,5 +443,8 @@ func main() {
 			}
 		}
 	}
-	xlsx.SaveAs(currentTime + ".xlsx")
+	if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
+		panic("保存excel失败")
+	}
+	time.Sleep(60 * time.Second)
 }
