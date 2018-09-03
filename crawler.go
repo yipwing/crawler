@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -15,7 +16,6 @@ import (
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/labstack/gommon/log"
-	"github.com/parnurzeal/gorequest"
 )
 
 // var 变量定义
@@ -188,24 +188,29 @@ type ExcelTitle []struct {
 }
 
 // ReadArticleAndTitle 获取文章内容与文章标题，还有公众号名称
-func ReadArticleAndTitle(url string) (name string, article string, articletitle string) {
-	resp, body, respErr := gorequest.New().Get(url).End()
+func ReadArticleAndTitle(url string) (article string, articletitle string) {
+	client := &http.Client{}
+	req, reqErr := http.NewRequest("GET", url, nil)
+	req.Header.Add("User-Agent", UserAgent)
+	resp, respErr := client.Do(req)
+	// resp, body, respErr := gorequest.New().Get(url).End()
 	if respErr != nil || resp.StatusCode != 200 {
 		panic(respErr)
 	}
 	defer resp.Body.Close()
-	doc, reqErr := goquery.NewDocumentFromReader(strings.NewReader(body))
+	body, _ := ioutil.ReadAll(resp.Body)
+	doc, reqErr := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if reqErr != nil {
 		panic(reqErr)
 	}
-	PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text() // 公众号名称
+	// PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text() // 公众号名称
 	re, _ := regexp.Compile("\\s+|\n")
-	pn := re.ReplaceAllString(PublicName, "")
+	// pn := re.ReplaceAllString(PublicName, "")
 	ArticleString, _ := doc.Find(".rich_media_content").Html()
 	atitle := doc.Find(".rich_media_title").Text()
 	title := re.ReplaceAllString(atitle, "")
 	fmt.Print(title)
-	return pn, ArticleString, title
+	return ArticleString, title
 }
 
 // var log = logging.MustGetLogger("crawler")
@@ -328,7 +333,7 @@ func main() {
 		for _, First := range gml.List {
 			pubDate := time.Unix(First.CommMsgInfo.Datetime, 0).Format(timeLayout)
 			contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
-			pn, article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
+			article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
 			postForm := &url.Values{}
 			for key, value := range contentURL.Query() {
 				switch key {
@@ -385,12 +390,12 @@ func main() {
 			if msgErr != nil {
 				panic("无法获取文章扩展数据")
 			}
-			fmt.Printf("loop out %s\n", msgStat)
-			ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+			// fmt.Printf("loop out %s\n", msgStat)
+			ed = append(ed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
 			if First.AppMsgExtInfo.IsMulti == 1 {
 				for _, Sec := range First.AppMsgExtInfo.MultiAppMsgItemList {
 					contentURL, _ := url.Parse(Sec.ContentURL)
-					pn, article, title := ReadArticleAndTitle(Sec.ContentURL)
+					article, title := ReadArticleAndTitle(Sec.ContentURL)
 					postForm := &url.Values{}
 					for key, value := range contentURL.Query() {
 						switch key {
@@ -447,8 +452,8 @@ func main() {
 					if msgErr != nil {
 						panic("无法获取文章扩展数据")
 					}
-					fmt.Printf("loop in %s\n", msgStat)
-					ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					// fmt.Printf("loop in %s\n", msgStat)
+					ed = append(ed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
 					time.Sleep(5 * time.Second)
 				}
 			}
@@ -463,9 +468,9 @@ func main() {
 			}
 		}
 		timer++
-	}
-	if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
-		panic("保存excel失败")
+		if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
+			panic("保存excel失败")
+		}
 	}
 	time.Sleep(60 * time.Second)
 }
