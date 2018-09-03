@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -10,11 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/op/go-logging"
-
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
-
+	"github.com/labstack/gommon/log"
 	"github.com/parnurzeal/gorequest"
 )
 
@@ -61,6 +61,7 @@ const (
 	UserAgent    string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 MicroMessenger/6.5.2.501 NetType/WIFI WindowsWechat QBCore/3.43.901.400 QQBrowser/9.0.2524.400"
 	DJGZ         string = "动静贵州"
 	GZXWLB       string = "贵州新闻联播"
+	PostType     string = "application/x-www-form-urlencoded"
 )
 
 // PostData 提交给微信服务端的数据结构
@@ -207,7 +208,7 @@ func ReadArticleAndTitle(url string) (name string, article string, articletitle 
 	return pn, ArticleString, title
 }
 
-var log = logging.MustGetLogger("crawler")
+// var log = logging.MustGetLogger("crawler")
 
 // var format = logging.MustStringFormatter(
 // 	`%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
@@ -249,7 +250,7 @@ func main() {
 	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
 	startDay := thisMonth.AddDate(0, -1, 0)
 	endDay := thisMonth.AddDate(0, 0, -1)
-	// MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
+	MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
 
 	// 初始化excel表头标题
 	xlsx := excelize.NewFile()
@@ -260,63 +261,75 @@ func main() {
 	}
 	ed := []ExcelData{}
 	index := 0
+	timer := 0
 	for index <= p.Offset {
-		request := gorequest.New()
+		client := &http.Client{}
+		URL, _ := url.Parse(BaseURL)
 		param := &url.Values{}
 		param.Add("action", Action)
 		param.Add("__biz", p.Biz)
 		param.Add("uin", p.Uin)
 		param.Add("key", p.Key)
 		param.Add("pass_ticket", p.PassTicket)
-		param.Add("is_ok", string(p.IsOk))
+		// param.Add("is_ok", string(p.IsOk))
 		param.Add("f", p.Format)
-		param.Add("x5", string(p.X5))
-		param.Add("offset", string(p.Offset))
-		param.Add("count", string(p.Count))
-		req, body, reqErr := request.Get(BaseURL).Query(param).Set("User-Agent", UserAgent).End()
+		// param.Add("x5", string(p.X5))
+		param.Add("offset", strconv.Itoa(p.Offset))
+		param.Add("count", strconv.Itoa(p.Count))
+		URL.RawQuery = param.Encode()
+		req, reqErr := http.NewRequest("GET", URL.String(), nil)
+		req.Header.Set("User-Agent", UserAgent)
 		if reqErr != nil {
-			buffer := []byte(strings.Join([]string{"Get Request", body, "\n"}, ""))
-			log.Debugf("Get Request : %s", body)
-			logFile.Write(buffer)
 			panic(reqErr)
 		}
-		defer req.Body.Close()
-		if req.StatusCode != 200 {
+		resp, respErr := client.Do(req)
+		body, _ := ioutil.ReadAll(resp.Body)
+		if respErr != nil {
+			log.Debugf("Get Request : %s", body)
+			logFile.Write([]byte(body))
+			panic(respErr)
+		}
+		// req, body, reqErr := request.Get(BaseURL).Query(param).Set("User-Agent", UserAgent).End()
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
 			panic("status code error")
 		}
 		receive := &ReceiveData{}
 		orgErr := json.Unmarshal([]byte(body), &receive)
 		if orgErr != nil {
-			buffer := []byte(strings.Join([]string{"json transform error", orgErr.Error(), "\n"}, ""))
-			log.Debugf("json transform error : %s", orgErr.Error())
-			logFile.Write(buffer)
+			// buffer := []byte(strings.Join([]string{"json transform error", orgErr.Error(), "\n"}, ""))
+			log.Debugf("json transform error: %s", orgErr.Error())
+			logFile.Write([]byte(body))
 			panic(orgErr)
 		}
 		gml := &GeneralMsgList{}
 		level1Err := json.Unmarshal([]byte(receive.GeneralMsgList), &gml)
 		if level1Err != nil {
-			buffer := []byte(strings.Join([]string{"json sub list transform error", orgErr.Error(), "\n"}, ""))
-			log.Debugf("json sub list transform error : %s", orgErr.Error())
-			logFile.Write(buffer)
+			// buffer := []byte(strings.Join([]string{"json sub list transform error", orgErr.Error(), "\n"}, ""))
+			log.Debugf("json sub list transform error : %s", level1Err.Error())
+			logFile.Write([]byte(body))
 			panic(level1Err)
 		}
 		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[index].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
 		// todo 这里需要判断时间 并不清楚具体情况
-		if endDay.Unix()-articleTime.Unix() > BaseDaySec && index == 0 {
+		if endDay.Unix()-articleTime.Unix() > BaseDaySec && timer == 0 {
+			fmt.Printf("上月最后一天: %s\n", endDay.String())
+			fmt.Printf("文章最后一天: %s\n", articleTime.String())
+			fmt.Printf("timer : %s\n", timer)
 			panic("文章时间与本地获取时间不符。")
 		}
-		if startDay.Unix()-articleTime.Unix() < BaseDaySec && index > 0 {
+		if startDay.Unix()-articleTime.Unix() < BaseDaySec && timer == int(MonthOfDay) {
 			break
 		} else {
 			p.Offset = receive.NextOffset
 		}
-		fmt.Printf("loop: %d times", index+1)
+		fmt.Printf("loop: %d times\n", timer+1)
+		sublink := &http.Client{}
 		for _, First := range gml.List {
 			pubDate := time.Unix(First.CommMsgInfo.Datetime, 0).Format(timeLayout)
 			contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
 			pn, article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
 			postForm := &url.Values{}
-			getForm := &url.Values{}
 			for key, value := range contentURL.Query() {
 				switch key {
 				case "action":
@@ -344,18 +357,20 @@ func main() {
 			postForm.Add("pass_ticket", p.PassTicket)
 			postForm.Add("is_only_read", "1")
 			postForm.Add("msg_daily_idx", "1")
+			req, postErr := http.NewRequest("POST", ReadCountURL, strings.NewReader(postForm.Encode()))
+			if postErr != nil {
+				panic(postErr)
+			}
+			getForm := req.URL.Query()
 			getForm.Add("wxtoken", "777")
 			getForm.Add("f", "json")
 			getForm.Add("uin", p.Uin)
 			getForm.Add("key", p.Key)
 			getForm.Add("pass_ticket", p.PassTicket)
-			reading, body, readErr := gorequest.New().
-				Post(ReadCountURL).
-				Query(getForm).
-				Set("User-Agent", UserAgent).
-				Type("urlencoded").
-				Send(postForm).
-				End()
+			req.URL.RawQuery = getForm.Encode()
+			req.Header.Set("User-Agent", UserAgent)
+			req.Header.Set("Content-Type", PostType)
+			reading, readErr := sublink.Do(req)
 			if readErr != nil {
 				fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
 				panic("发送数据时发生异常")
@@ -364,19 +379,19 @@ func main() {
 			if reading.StatusCode != 200 {
 				panic("http状态码返回错误")
 			}
-			fmt.Println(body)
+			body, _ := ioutil.ReadAll(reading.Body)
 			msgStat := &MsgStatus{}
 			msgErr := json.Unmarshal([]byte(body), msgStat)
 			if msgErr != nil {
 				panic("无法获取文章扩展数据")
 			}
+			fmt.Printf("loop out %s\n", msgStat)
 			ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
 			if First.AppMsgExtInfo.IsMulti == 1 {
 				for _, Sec := range First.AppMsgExtInfo.MultiAppMsgItemList {
 					contentURL, _ := url.Parse(Sec.ContentURL)
 					pn, article, title := ReadArticleAndTitle(Sec.ContentURL)
 					postForm := &url.Values{}
-					getForm := &url.Values{}
 					for key, value := range contentURL.Query() {
 						switch key {
 						case "action":
@@ -404,18 +419,20 @@ func main() {
 					postForm.Add("pass_ticket", p.PassTicket)
 					postForm.Add("is_only_read", "1")
 					postForm.Add("msg_daily_idx", "1")
+					req, postErr := http.NewRequest("POST", ReadCountURL, strings.NewReader(postForm.Encode()))
+					if postErr != nil {
+						panic(postErr)
+					}
+					getForm := req.URL.Query()
 					getForm.Add("wxtoken", "777")
 					getForm.Add("f", "json")
 					getForm.Add("uin", p.Uin)
 					getForm.Add("key", p.Key)
 					getForm.Add("pass_ticket", p.PassTicket)
-					reading, body, readErr := gorequest.New().
-						Post(ReadCountURL).
-						Query(getForm).
-						Set("User-Agent", UserAgent).
-						Type("urlencoded").
-						Send(postForm).
-						End()
+					req.URL.RawQuery = getForm.Encode()
+					req.Header.Set("User-Agent", UserAgent)
+					req.Header.Set("Content-Type", PostType)
+					reading, readErr := sublink.Do(req)
 					if readErr != nil {
 						fmt.Printf("get parameter %s\npost parameter %s", getForm, postForm)
 						panic("发送数据时发生异常")
@@ -424,15 +441,18 @@ func main() {
 					if reading.StatusCode != 200 {
 						panic("http状态码返回错误")
 					}
-					fmt.Println(body)
-					subMsgStat := &MsgStatus{}
-					msgErr := json.Unmarshal([]byte(body), subMsgStat)
+					body, _ := ioutil.ReadAll(reading.Body)
+					msgStat := &MsgStatus{}
+					msgErr := json.Unmarshal([]byte(body), msgStat)
 					if msgErr != nil {
 						panic("无法获取文章扩展数据")
 					}
-					ed = append(ed, ExcelData{pn, pubDate, subMsgStat.Appmsgstat.ReadNum, subMsgStat.Appmsgstat.LikeNum, subMsgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					fmt.Printf("loop in %s\n", msgStat)
+					ed = append(ed, ExcelData{pn, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					time.Sleep(5 * time.Second)
 				}
 			}
+			time.Sleep(5 * time.Second)
 		}
 		excelLoop := 2
 		for i := 0; i < len(ed); i++ {
@@ -442,6 +462,7 @@ func main() {
 				xlsx.SetCellValue(pubname, axis, excel.PublicName)
 			}
 		}
+		timer++
 	}
 	if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
 		panic("保存excel失败")
