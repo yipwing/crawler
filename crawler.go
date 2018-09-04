@@ -310,7 +310,7 @@ func main() {
 	breakFlag := false
 	// 初始化excel表头标题
 	xlsx := excelize.NewFile()
-	index := len(xlsx.GetRows(pubname))
+	index := 0
 	timer := 0
 	timeLayout := "2006-01-02"
 	xlsx.NewSheet(pubname)
@@ -320,9 +320,9 @@ func main() {
 	for _, v := range excelTitle {
 		xlsx.SetCellValue(pubname, v.Axis, v.Name)
 	}
-	if index > 0 {
-		p.Offset = p.Count * index
-	}
+	// if index > 0 {
+	// 	p.Offset = p.Count * index
+	// }
 	// ed := []ExcelData{}
 	for index <= p.Offset {
 		client := &http.Client{}
@@ -371,7 +371,7 @@ func main() {
 			logFile.Write([]byte(body))
 			panic("json读取错误，估计是key和pass_ticket过期了")
 		}
-		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[index].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
+		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[timer].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
 		// todo 这里需要判断时间 并不清楚具体情况
 		// if articleTime.Month() > startDay.Month() {
 		// 	time.Sleep(15 * time.Second)
