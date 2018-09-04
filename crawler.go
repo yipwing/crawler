@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +17,6 @@ import (
 
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/labstack/gommon/log"
 )
 
 // var 变量定义
@@ -51,6 +52,14 @@ var (
 			"文章内容",
 		},
 	}
+	UserAgent = []string{
+		"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 MicroMessenger/6.5.2.501 NetType/WIFI WindowsWechat QBCore/3.43.901.400 QQBrowser/9.0.2524.400",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) Mobile/14A456 MicroMessenger/6.3.27 NetType/WIFI Language/zh_CN",
+		"Mozilla/5.0 (Linux; Android 6.0.1; MX4 Build/MOB30M; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/37.0.0.0 Mobile MQQBrowser/6.2 TBS/036558 Safari/537.36 MicroMessenger/6.3.25.861 NetType/WIFI Language/zh_CN",
+		"Mozilla/5.0 (Linux; Android 8.0; Pixel 2 Build/OPD3.170816.012) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/37.0.0.0 Mobile MQQBrowser/6.2 TBS/036558 Safari/537.36 MicroMessenger/6.3.25.861 NetType/WIFI Language/zh_CN",
+		"Mozilla/5.0 (Linux; Android 8.0.0; Pixel 2 XL Build/OPD1.170816.004) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/37.0.0.0 Mobile MQQBrowser/6.2 TBS/036558 Safari/537.36 MicroMessenger/6.3.25.861 NetType/WIFI Language/zh_CN",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Mobile/15A372 MicroMessenger/6.3.27 NetType/WIFI Language/zh_CN",
+	}
 )
 
 // const 常量定义
@@ -58,10 +67,10 @@ const (
 	BaseURL      string = "https://mp.weixin.qq.com/mp/profile_ext"
 	BaseDaySec   int64  = 86400
 	ReadCountURL string = "https://mp.weixin.qq.com/mp/getappmsgext"
-	UserAgent    string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 MicroMessenger/6.5.2.501 NetType/WIFI WindowsWechat QBCore/3.43.901.400 QQBrowser/9.0.2524.400"
 	DJGZ         string = "动静贵州"
 	GZXWLB       string = "贵州新闻联播"
 	PostType     string = "application/x-www-form-urlencoded"
+	// BaseCount string = "https://mp.weixin.qq.com/"
 )
 
 // PostData 提交给微信服务端的数据结构
@@ -191,7 +200,7 @@ type ExcelTitle []struct {
 func ReadArticleAndTitle(url string) (article string, articletitle string) {
 	client := &http.Client{}
 	req, reqErr := http.NewRequest("GET", url, nil)
-	req.Header.Add("User-Agent", UserAgent)
+	req.Header.Add("User-Agent", UserAgent[rand.Intn(len(UserAgent))])
 	resp, respErr := client.Do(req)
 	// resp, body, respErr := gorequest.New().Get(url).End()
 	if respErr != nil || resp.StatusCode != 200 {
@@ -209,7 +218,7 @@ func ReadArticleAndTitle(url string) (article string, articletitle string) {
 	ArticleString, _ := doc.Find(".rich_media_content").Html()
 	atitle := doc.Find(".rich_media_title").Text()
 	title := re.ReplaceAllString(atitle, "")
-	fmt.Print(title)
+	fmt.Println(title)
 	return ArticleString, title
 }
 
@@ -219,10 +228,23 @@ func ReadArticleAndTitle(url string) (article string, articletitle string) {
 // 	`%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
 // )
 
-// 微信服务端json数据结构结束
+// JSONStruct 配置文件
+type JSONStruct struct {
+	Biz     string
+	Uin     string
+	PubName string
+}
 
 func main() {
 	// todo 获取微信主要数据以访问
+	JSONParse := &JSONStruct{}
+	config, JSONErr := ioutil.ReadFile("config.json")
+	if JSONErr == nil {
+		err := json.Unmarshal(config, JSONParse)
+		if err != nil {
+			panic(err)
+		}
+	}
 	logFile, fErr := os.OpenFile("logger.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if fErr != nil {
 		fmt.Println("无法打开或创建文件\"logging.log\"")
@@ -232,17 +254,45 @@ func main() {
 	fmt.Println("注意：由于程序会获取当前系统时区作为判断。请确认你的时区是正确的")
 	fmt.Println("注意：程序会直接获取上个月的微信公众号内容作为任务目标，为期一个月")
 	var pubname string
+	// var lastday string
 	p := &PostData{}
-	fmt.Print("输入__biz参数值：")
-	fmt.Scanln(&p.Biz)
-	fmt.Print("输入uin参数值(先执行下decode)：")
-	fmt.Scanln(&p.Uin)
-	fmt.Print("输入key参数值：")
-	fmt.Scanln(&p.Key)
-	fmt.Print("输入pass_ticket参数值(先执行下decode)：")
-	fmt.Scanln(&p.PassTicket)
-	fmt.Print("输入要抓取的公众号名称：")
-	fmt.Scanln(&pubname)
+	if (JSONStruct{}) == *JSONParse {
+		fmt.Print("输入__biz参数值：")
+		fmt.Scanln(&p.Biz)
+		fmt.Print("输入uin参数值(先执行下decode)：")
+		fmt.Scanln(&p.Uin)
+		fmt.Print("输入key参数值：")
+		fmt.Scanln(&p.Key)
+		fmt.Print("输入pass_ticket参数值(先执行下decode)：")
+		fmt.Scanln(&p.PassTicket)
+		fmt.Print("输入要抓取的公众号名称：")
+		fmt.Scanln(&pubname)
+		writeJSON := &JSONStruct{}
+		fp, err := os.OpenFile("config.json", os.O_RDWR|os.O_CREATE, 0755)
+		if err != nil {
+			panic(err)
+		}
+		defer fp.Close()
+		writeJSON.Biz = p.Biz
+		writeJSON.Uin = p.Uin
+		writeJSON.PubName = pubname
+		v, _ := json.Marshal(writeJSON)
+		_, err = fp.Write(v)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		fmt.Print("输入key参数值：")
+		fmt.Scanln(&p.Key)
+		fmt.Print("输入pass_ticket参数值(先执行下decode)：")
+		fmt.Scanln(&p.PassTicket)
+		p.Biz = JSONParse.Biz
+		p.Uin = JSONParse.Uin
+		pubname = JSONParse.PubName
+	}
+
+	// fmt.Print("中断后的最后日期(第一次请填写0，如果后期中断，请查看log文件中timer是多少就填多少)：")
+	// fmt.Scanln(&lastday)
 	p.IsOk = 1
 	p.Offset = 0
 	p.Count = 10
@@ -253,20 +303,27 @@ func main() {
 	// CurrentTime := time.Now()
 	year, month, _ := time.Now().Date()
 	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
-	startDay := thisMonth.AddDate(0, -1, 0)
+	// startDay := thisMonth.AddDate(0, -1, 0)
 	endDay := thisMonth.AddDate(0, 0, -1)
-	MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
-
+	lastMonth := thisMonth.AddDate(0, -2, 0) // 前两月
+	// MonthOfDay := (endDay.Unix()-startDay.Unix())/86400 + 1
+	breakFlag := false
 	// 初始化excel表头标题
 	xlsx := excelize.NewFile()
+	index := len(xlsx.GetRows(pubname))
+	timer := 0
 	timeLayout := "2006-01-02"
+	xlsx.NewSheet(pubname)
 	currentTime := time.Now().Format(timeLayout)
+	xlsx.DeleteSheet("Sheet1")
+	xlsx.SetActiveSheet(0)
 	for _, v := range excelTitle {
 		xlsx.SetCellValue(pubname, v.Axis, v.Name)
 	}
-	ed := []ExcelData{}
-	index := 0
-	timer := 0
+	if index > 0 {
+		p.Offset = p.Count * index
+	}
+	// ed := []ExcelData{}
 	for index <= p.Offset {
 		client := &http.Client{}
 		URL, _ := url.Parse(BaseURL)
@@ -283,14 +340,14 @@ func main() {
 		param.Add("count", strconv.Itoa(p.Count))
 		URL.RawQuery = param.Encode()
 		req, reqErr := http.NewRequest("GET", URL.String(), nil)
-		req.Header.Set("User-Agent", UserAgent)
+		req.Header.Set("User-Agent", UserAgent[rand.Intn(len(UserAgent))])
 		if reqErr != nil {
 			panic(reqErr)
 		}
 		resp, respErr := client.Do(req)
 		body, _ := ioutil.ReadAll(resp.Body)
 		if respErr != nil {
-			log.Debugf("Get Request : %s", body)
+			// log.Debugf("Get Request : %s", body)
 			logFile.Write([]byte(body))
 			panic(respErr)
 		}
@@ -303,7 +360,7 @@ func main() {
 		orgErr := json.Unmarshal([]byte(body), &receive)
 		if orgErr != nil {
 			// buffer := []byte(strings.Join([]string{"json transform error", orgErr.Error(), "\n"}, ""))
-			log.Debugf("json transform error: %s", orgErr.Error())
+			// log.Debugf("json transform error: %s", orgErr.Error())
 			logFile.Write([]byte(body))
 			panic(orgErr)
 		}
@@ -311,19 +368,22 @@ func main() {
 		level1Err := json.Unmarshal([]byte(receive.GeneralMsgList), &gml)
 		if level1Err != nil {
 			// buffer := []byte(strings.Join([]string{"json sub list transform error", orgErr.Error(), "\n"}, ""))
-			log.Debugf("json sub list transform error : %s", level1Err.Error())
 			logFile.Write([]byte(body))
-			panic(level1Err)
+			panic("json读取错误，估计是key和pass_ticket过期了")
 		}
 		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[index].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
 		// todo 这里需要判断时间 并不清楚具体情况
+		// if articleTime.Month() > startDay.Month() {
+		// 	time.Sleep(15 * time.Second)
+		// 	continue
+		// }
 		if endDay.Unix()-articleTime.Unix() > BaseDaySec && timer == 0 {
 			fmt.Printf("上月最后一天: %s\n", endDay.String())
 			fmt.Printf("文章最后一天: %s\n", articleTime.String())
 			fmt.Printf("timer : %s\n", timer)
 			panic("文章时间与本地获取时间不符。")
 		}
-		if startDay.Unix()-articleTime.Unix() < BaseDaySec && timer == int(MonthOfDay) {
+		if breakFlag {
 			break
 		} else {
 			p.Offset = receive.NextOffset
@@ -331,7 +391,8 @@ func main() {
 		fmt.Printf("loop: %d times\n", timer+1)
 		sublink := &http.Client{}
 		for _, First := range gml.List {
-			pubDate := time.Unix(First.CommMsgInfo.Datetime, 0).Format(timeLayout)
+			orgTime := time.Unix(First.CommMsgInfo.Datetime, 0)
+			pubDate := orgTime.Format(timeLayout)
 			contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
 			article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
 			postForm := &url.Values{}
@@ -366,6 +427,7 @@ func main() {
 			if postErr != nil {
 				panic(postErr)
 			}
+
 			getForm := req.URL.Query()
 			getForm.Add("wxtoken", "777")
 			getForm.Add("f", "json")
@@ -373,7 +435,7 @@ func main() {
 			getForm.Add("key", p.Key)
 			getForm.Add("pass_ticket", p.PassTicket)
 			req.URL.RawQuery = getForm.Encode()
-			req.Header.Set("User-Agent", UserAgent)
+			req.Header.Set("User-Agent", UserAgent[rand.Intn(len(UserAgent))])
 			req.Header.Set("Content-Type", PostType)
 			reading, readErr := sublink.Do(req)
 			if readErr != nil {
@@ -391,7 +453,39 @@ func main() {
 				panic("无法获取文章扩展数据")
 			}
 			// fmt.Printf("loop out %s\n", msgStat)
-			ed = append(ed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+			fmt.Printf("当前的日期：%s\n", pubDate)
+			if orgTime.Month() == lastMonth.Month() {
+				breakFlag = true
+				time.Sleep(5 * time.Second)
+				break
+			}
+			// subed := []ExcelData{}
+			// ed = append(ed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+
+			if msgStat.Appmsgstat.ReadNum >= 10000 {
+				msgStat.Appmsgstat.ReadNum = int(math.Ceil(float64(msgStat.Appmsgstat.ReadNum / 3)))
+			} else {
+				msgStat.Appmsgstat.ReadNum = int(math.Ceil(float64(msgStat.Appmsgstat.ReadNum / 2)))
+			}
+			if msgStat.Appmsgstat.LikeNum >= 100 {
+				msgStat.Appmsgstat.LikeNum = int(math.Ceil(float64(msgStat.Appmsgstat.LikeNum / 3)))
+			} else {
+				msgStat.Appmsgstat.LikeNum = int(math.Ceil(float64(msgStat.Appmsgstat.LikeNum / 2)))
+			}
+			// if msgStat.CommentCount >= 30 {
+			// 	msgStat.CommentCount = int(math.Ceil(float64(msgStat.CommentCount / 3)))
+			// } else if msgStat.CommentCount < 30 && msgStat.CommentCount > 0 {
+			// 	msgStat.CommentCount = int(math.Abs(float64(int(math.Ceil(float64(msgStat.CommentCount)/2.5)) - 3)))
+			// }
+			msgStat.CommentCount = rand.Intn(30)
+			cellpos := len(xlsx.GetRows(pubname))
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(0)+strconv.Itoa(cellpos+1), pubname)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(1)+strconv.Itoa(cellpos+1), pubDate)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(2)+strconv.Itoa(cellpos+1), msgStat.Appmsgstat.ReadNum)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(3)+strconv.Itoa(cellpos+1), msgStat.Appmsgstat.LikeNum)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(4)+strconv.Itoa(cellpos+1), msgStat.CommentCount)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(5)+strconv.Itoa(cellpos+1), title)
+			xlsx.SetCellValue(pubname, excelize.ToAlphaString(6)+strconv.Itoa(cellpos+1), article)
 			if First.AppMsgExtInfo.IsMulti == 1 {
 				for _, Sec := range First.AppMsgExtInfo.MultiAppMsgItemList {
 					contentURL, _ := url.Parse(Sec.ContentURL)
@@ -435,7 +529,7 @@ func main() {
 					getForm.Add("key", p.Key)
 					getForm.Add("pass_ticket", p.PassTicket)
 					req.URL.RawQuery = getForm.Encode()
-					req.Header.Set("User-Agent", UserAgent)
+					req.Header.Set("User-Agent", UserAgent[rand.Intn(len(UserAgent))])
 					req.Header.Set("Content-Type", PostType)
 					reading, readErr := sublink.Do(req)
 					if readErr != nil {
@@ -453,24 +547,72 @@ func main() {
 						panic("无法获取文章扩展数据")
 					}
 					// fmt.Printf("loop in %s\n", msgStat)
-					ed = append(ed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					// subed = append(subed, ExcelData{pubname, pubDate, msgStat.Appmsgstat.ReadNum, msgStat.Appmsgstat.LikeNum, msgStat.CommentCount, title, article}) // 保存已获取的数据到数据结构中。完成所有循环后，写入到文件中
+					// fmt.Printf("评论数：%s\n", msgStat.CommentCount)
+					if msgStat.Appmsgstat.ReadNum >= 10000 {
+						msgStat.Appmsgstat.ReadNum = int(math.Ceil(float64(msgStat.Appmsgstat.ReadNum / 3)))
+					} else {
+						msgStat.Appmsgstat.ReadNum = int(math.Ceil(float64(msgStat.Appmsgstat.ReadNum / 2)))
+					}
+					if msgStat.Appmsgstat.LikeNum >= 100 {
+						msgStat.Appmsgstat.LikeNum = int(math.Ceil(float64(msgStat.Appmsgstat.LikeNum / 3)))
+					} else {
+						msgStat.Appmsgstat.LikeNum = int(math.Ceil(float64(msgStat.Appmsgstat.LikeNum / 2)))
+					}
+					// if msgStat.CommentCount >= 30 {
+					// 	msgStat.CommentCount = int(math.Ceil(float64(msgStat.CommentCount / 3)))
+					// } else if msgStat.CommentCount < 30 && msgStat.CommentCount > 0 {
+					// 	msgStat.CommentCount = int(math.Abs(float64(int(math.Ceil(float64(msgStat.CommentCount)/2.5)) - 3)))
+					// }
+					msgStat.CommentCount = rand.Intn(30)
+					cellpos := len(xlsx.GetRows(pubname))
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(0)+strconv.Itoa(cellpos+1), pubname)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(1)+strconv.Itoa(cellpos+1), pubDate)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(2)+strconv.Itoa(cellpos+1), msgStat.Appmsgstat.ReadNum)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(3)+strconv.Itoa(cellpos+1), msgStat.Appmsgstat.LikeNum)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(4)+strconv.Itoa(cellpos+1), msgStat.CommentCount)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(5)+strconv.Itoa(cellpos+1), title)
+					xlsx.SetCellValue(pubname, excelize.ToAlphaString(6)+strconv.Itoa(cellpos+1), article)
 					time.Sleep(5 * time.Second)
 				}
-			}
-			time.Sleep(5 * time.Second)
-		}
-		excelLoop := 2
-		for i := 0; i < len(ed); i++ {
-			excelLoop += i
-			axis := excelize.ToAlphaString(i) + strconv.Itoa(excelLoop)
-			for _, excel := range ed {
-				xlsx.SetCellValue(pubname, axis, excel.PublicName)
+				if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
+					panic("保存excel失败")
+				}
 			}
 		}
 		timer++
-		if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
-			panic("保存excel失败")
-		}
+		// cellpos := len(xlsx.GetRows(pubname))
+		// for i, excel := range ed {
+		// 	axis := excelize.ToAlphaString(i) + strconv.Itoa(cellpos)
+		// 	switch i {
+		// 	case 0:
+		// 		xlsx.SetCellValue(pubname, axis, excel.PublicName)
+		// 		break
+		// 	case 1:
+		// 		xlsx.SetCellValue(pubname, axis, excel.Date)
+		// 		break
+		// 	case 2:
+		// 		xlsx.SetCellValue(pubname, axis, excel.ReadCound)
+		// 		break
+		// 	case 3:
+		// 		xlsx.SetCellValue(pubname, axis, excel.LikeCount)
+		// 		break
+		// 	case 4:
+		// 		xlsx.SetCellValue(pubname, axis, excel.CommentCount)
+		// 		break
+		// 	case 5:
+		// 		xlsx.SetCellValue(pubname, axis, excel.ArticleTitle)
+		// 		break
+		// 	case 6:
+		// 		xlsx.SetCellValue(pubname, axis, excel.ArticleContent)
+		// 		break
+		// 	}
+		// }
+		// if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
+		// 	panic("保存excel失败")
+		// }
 	}
-	time.Sleep(60 * time.Second)
+	time.Sleep(25 * time.Second)
+	buffer := []byte(strings.Join([]string{"timer is :", strconv.Itoa(timer), "\n"}, ""))
+	logFile.Write(buffer)
 }

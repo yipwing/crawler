@@ -2,11 +2,7 @@ package main
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/parnurzeal/gorequest"
+	"time"
 )
 
 // const var
@@ -78,29 +74,47 @@ type GeneralMsgList struct {
 	} `json:"list"`
 }
 
-func ReadArticleAndTitle(url string) (name string, article string, articletitle string) {
-	resp, body, respErr := gorequest.New().Get(url).End()
-	if respErr != nil || resp.StatusCode != 200 {
-		panic(respErr)
-	}
-	defer resp.Body.Close()
-	doc, reqErr := goquery.NewDocumentFromReader(strings.NewReader(body))
-	if reqErr != nil {
-		panic(reqErr)
-	}
-	PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text() // 公众号名称
-	re, _ := regexp.Compile("\\s+|\n")
-	pn := re.ReplaceAllString(PublicName, "")
-	ArticleString, _ := doc.Find(".rich_media_content").Html()
-	atitle := doc.Find(".rich_media_title").Text()
-	title := re.ReplaceAllString(atitle, "")
-	fmt.Print(title)
-	return pn, ArticleString, title
-}
+// func ReadArticleAndTitle(url string) (name string, article string, articletitle string) {
+// 	resp, body, respErr := gorequest.New().Get(url).End()
+// 	if respErr != nil || resp.StatusCode != 200 {
+// 		panic(respErr)
+// 	}
+// 	defer resp.Body.Close()
+// 	doc, reqErr := goquery.NewDocumentFromReader(strings.NewReader(body))
+// 	if reqErr != nil {
+// 		panic(reqErr)
+// 	}
+// 	PublicName := doc.Find("#meta_content").Find("#profileBt").Find("#js_name").Text() // 公众号名称
+// 	re, _ := regexp.Compile("\\s+|\n")
+// 	pn := re.ReplaceAllString(PublicName, "")
+// 	ArticleString, _ := doc.Find(".rich_media_content").Html()
+// 	atitle := doc.Find(".rich_media_title").Text()
+// 	title := re.ReplaceAllString(atitle, "")
+// 	fmt.Print(title)
+// 	return pn, ArticleString, title
+// }
 
 // const DATEFORMAT = "2006-01-02"
 
+// JSONStruct 配置文件
+type JSONStruct struct {
+	Biz     string
+	Uin     string
+	PubName string
+}
+
 func main() {
+	year, month, _ := time.Now().Date()
+	thisMonth := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	startDay := thisMonth.AddDate(0, -1, 0)
+	h := time.Now()
+	fmt.Println(startDay.Month() < h.Month())
+	// for _, row := range rows {
+	// 	fmt.Println(len(row))
+	// 	for _, col := range row {
+	// 		fmt.Println(len(col))
+	// 	}
+	// }
 	// fileObj, _ := ioutil.ReadFile("origin.json")
 	// rec := &ReceiveData{}
 
@@ -164,4 +178,5 @@ func main() {
 	// 	}
 	// }
 	// f, _ := time.ParseInLocation("2006年01月02日", "2018年08月29日", time.Local)
+
 }
