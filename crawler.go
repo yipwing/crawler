@@ -203,8 +203,9 @@ func ReadArticleAndTitle(url string) (article string, articletitle string) {
 	req.Header.Add("User-Agent", UserAgent[rand.Intn(len(UserAgent))])
 	resp, respErr := client.Do(req)
 	// resp, body, respErr := gorequest.New().Get(url).End()
+	fmt.Println(url)
 	if respErr != nil || resp.StatusCode != 200 {
-		panic(respErr)
+		return "", ""
 	}
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -369,7 +370,7 @@ func main() {
 		if level1Err != nil {
 			// buffer := []byte(strings.Join([]string{"json sub list transform error", orgErr.Error(), "\n"}, ""))
 			logFile.Write([]byte(body))
-			panic("json读取错误，估计是key和pass_ticket过期了")
+			panic("json读取错误，估计key和pass_ticket过期了")
 		}
 		articleTime, _ := time.ParseInLocation(timeLayout, time.Unix(gml.List[timer].CommMsgInfo.Datetime, 0).Format("2006-01-02"), time.Local)
 		// todo 这里需要判断时间 并不清楚具体情况
@@ -395,6 +396,10 @@ func main() {
 			pubDate := orgTime.Format(timeLayout)
 			contentURL, _ := url.Parse(First.AppMsgExtInfo.ContentURL)
 			article, title := ReadArticleAndTitle(First.AppMsgExtInfo.ContentURL)
+			if article == "" && title == "" {
+				timer--
+				continue
+			}
 			postForm := &url.Values{}
 			for key, value := range contentURL.Query() {
 				switch key {
@@ -472,12 +477,10 @@ func main() {
 			} else {
 				msgStat.Appmsgstat.LikeNum = int(math.Ceil(float64(msgStat.Appmsgstat.LikeNum / 2)))
 			}
-			// if msgStat.CommentCount >= 30 {
-			// 	msgStat.CommentCount = int(math.Ceil(float64(msgStat.CommentCount / 3)))
-			// } else if msgStat.CommentCount < 30 && msgStat.CommentCount > 0 {
-			// 	msgStat.CommentCount = int(math.Abs(float64(int(math.Ceil(float64(msgStat.CommentCount)/2.5)) - 3)))
-			// }
-			msgStat.CommentCount = rand.Intn(30)
+
+			if msgStat.Appmsgstat.ReadNum > 8000 && msgStat.Appmsgstat.LikeNum > 40 {
+				msgStat.CommentCount = rand.Intn(30)
+			}
 			cellpos := len(xlsx.GetRows(pubname))
 			xlsx.SetCellValue(pubname, excelize.ToAlphaString(0)+strconv.Itoa(cellpos+1), pubname)
 			xlsx.SetCellValue(pubname, excelize.ToAlphaString(1)+strconv.Itoa(cellpos+1), pubDate)
@@ -581,36 +584,6 @@ func main() {
 			}
 		}
 		timer++
-		// cellpos := len(xlsx.GetRows(pubname))
-		// for i, excel := range ed {
-		// 	axis := excelize.ToAlphaString(i) + strconv.Itoa(cellpos)
-		// 	switch i {
-		// 	case 0:
-		// 		xlsx.SetCellValue(pubname, axis, excel.PublicName)
-		// 		break
-		// 	case 1:
-		// 		xlsx.SetCellValue(pubname, axis, excel.Date)
-		// 		break
-		// 	case 2:
-		// 		xlsx.SetCellValue(pubname, axis, excel.ReadCound)
-		// 		break
-		// 	case 3:
-		// 		xlsx.SetCellValue(pubname, axis, excel.LikeCount)
-		// 		break
-		// 	case 4:
-		// 		xlsx.SetCellValue(pubname, axis, excel.CommentCount)
-		// 		break
-		// 	case 5:
-		// 		xlsx.SetCellValue(pubname, axis, excel.ArticleTitle)
-		// 		break
-		// 	case 6:
-		// 		xlsx.SetCellValue(pubname, axis, excel.ArticleContent)
-		// 		break
-		// 	}
-		// }
-		// if xlsxErr := xlsx.SaveAs(currentTime + ".xlsx"); xlsxErr != nil {
-		// 	panic("保存excel失败")
-		// }
 	}
 	time.Sleep(25 * time.Second)
 	buffer := []byte(strings.Join([]string{"timer is :", strconv.Itoa(timer), "\n"}, ""))
